@@ -1,0 +1,325 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <title>World-Wide University Ranking Dashboard 2015</title>
+    <script src="https://d3js.org/d3.v4.min.js"></script>
+    <script src="https://d3js.org/d3-scale-chromatic.v1.min.js"></script>
+    <script src="https://d3js.org/d3-geo-projection.v2.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/d3-legend/2.24.0/d3-legend.js"></script>
+
+</head>
+
+<body>
+    <div>
+        <p>
+          Sarah Buckingham & Kevin Hennessey<br/>
+          CSE 5544<br/>
+          Final Project<br/>
+        </p>
+      </div>
+    <h1 style= "text-align:center">Ranking Universities World-Wide 2015</h1>
+      <!-- Initialize a second select button -->
+    <select id="selectButtontwo"></select>
+      <!-- Initialize a select button -->
+    <select id="selectButton"></select>
+    </style>
+      <!-- map -->
+    <div id="map"></div>
+    <!-- table -->
+    <div id ="table"></div> 
+    <style>
+        div.tooltip-map {
+            position: absolute;
+            text-align: center;
+            padding: .5rem;
+            background: #FFFFFF;
+            color: #313639;
+            border: 1px solid #313639;
+            border-radius: 6px;
+            pointer-events: none;
+            font-size: 1.0rem;
+       }
+    </style>   
+        <script>
+         
+            var rank_groups = ["world_rank", "quality_of_education", "alumni_employment", "quality_of_faculty", "publications", "influence","citations","broad_impact","patents"]
+            var value_groups = ["Highest_Rank", "Lowest_Rank" ,"Count", "Average"] 
+
+            // add the options to the button
+            d3.select("#selectButton")
+                .selectAll('myOptions')
+                .data(rank_groups)
+                    .enter()
+                .append('option')
+                .text(function (d) { return d; }) // text showed in the menu
+                .attr("value", function (d) { return d; })
+
+            // add the options to the button
+            d3.select("#selectButtontwo")
+                .selectAll('myOptions')
+                .data(value_groups)
+                    .enter()
+                .append('option')
+                .text(function (d) { return d; }) // text showed in the menu
+                .attr("value", function (d) { return d; })
+
+            // Height and width values
+            var width = 1600,
+            height = 1000;
+
+            var svg = d3.select("#map")
+                .append("svg")
+                .attr("width", width)
+                .attr("height", height);
+
+            // Map and projection
+            var projection = d3.geoNaturalEarth()
+                .scale(width / 2.8 / Math.PI)
+                .translate([width /4 , height / 2])
+
+            var path = d3.geoPath()
+                .projection(projection);
+
+            // Data and color scale
+            var data = d3.map();
+
+            // Load external data and create visualization
+            d3.queue()
+                .defer(d3.json, "http://enjalot.github.io/wwsd/data/world/world-110m.geojson")
+                .defer(d3.csv, "university_ranking_2015.csv")
+                .await(ready);
+
+            function ready(error, topo, ranks) {
+                if (error) throw error;
+
+                //Create initial value and rank for first map
+                var selectedValue = "Highest_Rank"
+                var selectedRank = "world_rank"
+
+                // Create initial colorscheme
+                var colorScheme = d3.schemeReds[7];
+                colorScheme.unshift("#eee")
+                var colorScale = d3.scaleThreshold()
+                    .domain([1, 11, 26, 101, 251, 501, 751, 1001])
+                    .range(colorScheme);
+
+                // Create initial Legend
+                var g = svg.append("g")
+                    .attr("class", "legendThreshold")
+                    .attr("transform", "translate(20,20)");
+                g.append("text")
+                    .attr("class", "caption")
+                    .attr("x", 0)
+                    .attr("y", -6);
+
+                var labels = ['NA', '1-10', '11-25', '26-100', '101-250', '251-500','501-750', '751-1000'];
+
+                var legend = d3.legendColor()
+                    .labels(function (d) { return labels[d.i]; })
+                    .shapePadding(4)
+                    .scale(colorScale);
+                svg.select(".legendThreshold")
+                    .call(legend);
+
+                // Group By for each country code
+                // calculates count of universities in top 1000, avg. ranking, maximum ranking, and minimum ranking
+                var ranking = d3.nest()
+                    .key(function(d) { return d.code;})
+                    .rollup(function(g) { 
+                        return {
+                            "Count": g.length,
+                            "Average" : d3.mean(g, function(d){return +d[selectedRank];}),
+                            "Lowest_Rank" : d3.max(g, function(d){return +d[selectedRank];}),
+                            "Highest_Rank" : d3.min(g, function(d){return +d[selectedRank];})
+                        }
+                    }).entries(ranks);
+
+                var topUni = ranks.slice().sort(function(a, b) {
+                    if(selectedRank == 'Lowest_rank'){
+                        return d3.descending(+a[selectedRank], +b[selectedRank]);
+                    }
+                    else{
+                        return d3.ascending(+a[selectedRank], +b[selectedRank]);
+                    }
+                })
+
+                var div = d3.select("body").append("div")
+                        .attr("class", "tooltip-map")
+                        .style("opacity", 0);
+
+                var formatDecimal = d3.format(".0f")
+                // Develop world map and color countries by world rank
+                var map = svg
+                    .append("g")
+                    .attr("class", "countries")
+                    .selectAll("path")
+                    .data(topo.features)
+                    .enter().append("path")
+                    .attr("d", path)
+                    .style("fill", function(d) {
+                    return colorScale(d3.values(ranking)
+                                            .filter(function(k){return k.key === d.id}) // filters for specific country code
+                                            .map(function(g){
+                                                return g.value[selectedValue]})); // specify which value {count, avg, min, max}
+                    })
+                    .style('stroke', 'white')
+                    .style('stroke-width', 0.5)
+                    .attr('transform', 'translate(0, 0)')
+                    .on('mouseover', function (d, i) {
+                        d3.select(this).transition()
+                            .duration('50')
+                            .attr('opacity', '.65');
+                        div.transition()
+                            .duration(50)
+                            .style("opacity", 1);
+                        let num = d.id + " "+ selectedValue +": " +  formatDecimal(d3.values(ranking)
+                                .filter(function(k){return k.key === d.id}) // filters for specific country code
+                                .map(function(g){
+                                    return g.value[selectedValue]})).toString();
+                        div.html(num)
+                            .style("left", (d3.event.pageX + 8) + "px")
+                            .style("top", (d3.event.pageY - 10) + "px");
+                    })
+                    .on('mouseout', function (d, i) {
+                        d3.select(this).transition()
+                            .duration('50')
+                            .attr('opacity', '1');
+                        div.transition()
+                            .duration('50')
+                            .style("opacity", 0);
+                    });
+                    
+
+                     // Get top 50 universities based on World Rank (*should be able to make this change based on selection like in code above)
+                    var topData = ranks.slice().sort(function(a, b) {
+                        return d3.ascending(+a[selectedRank], +b[selectedRank]);
+                    }).slice(0, 45);//top 50 here
+
+                    // column definitions
+                    var columns = [selectedRank, 'institution', 'country'];
+
+                    // create table
+                    var table =svg.append("foreignObject")
+                        .attr("width", width)
+                        .attr("height", height)
+                        .attr("x", 950)
+                        .attr("y", 0)
+                        .append("xhtml:body")
+                    var thead = table.append('thead')
+                    var tbody = table.append('tbody')
+
+                    // append the header row
+                    thead.append('tr')
+                    .selectAll('th')
+                    .data(columns).enter()
+                    .append('th')
+                        .text(function (column) { return column; });
+
+                    var rows = tbody.selectAll('tr')
+                        .data(topData)
+                        .enter()
+                        .append('tr');
+
+                    // create a cell in each row for each column
+                    var cells = rows.selectAll('td')
+                        .data(function (row) {
+                            return columns.map(function (column) {
+                            return {column: column, value: row[column]};
+                            });
+                        })
+                        .enter()
+                        .append('td')
+                            .text(function (d) { return d.value; });
+                    
+
+
+                    // A function that update the Map based on rank selection
+                    function updateChart(selectedRank, selectedValue, ranks, map) {
+
+                        // Update the ranking variables based on rank selection
+                        ranking = d3.nest()
+                            .key(function(d) { return d.code;})
+                            .rollup(function(g) { 
+                            return {
+                                "Count": g.length,
+                                "Average" : d3.mean(g, function(d){return +d[selectedRank];}),
+                                "Lowest_Rank" : d3.max(g, function(d){return +d[selectedRank];}),
+                                "Highest_Rank" : d3.min(g, function(d){return +d[selectedRank];})
+                            }
+                        }).entries(ranks);
+
+                        var div = d3.select("body").append("div")
+                            .attr("class", "tooltip-donut")
+                            .style("opacity", 0);
+                        // Update Map
+                        map
+                            .transition().duration(125)
+                            .style("fill", function(d) {
+                            return colorScale(d3.values(ranking)
+                                                .filter(function(k){return k.key === d.id}) // filters for specific country code
+                                                .map(function(g){
+                                                    return g.value[selectedValue]})); // specify which value {count, avg, min, max}
+                            })
+                            .style('stroke', 'white')
+                            .style('stroke-width', 0.5);
+                    }
+
+                    function updateTable(ranks, selectedRank, selectedValue, thead, tbody){
+
+                        // Get top 50 universities based on World Rank (*should be able to make this change based on selection like in code above)
+                        var topData = ranks.slice().sort(function(a, b) {
+                            if(selectedValue == "Lowest_Rank"){ return d3.descending(+a[selectedRank], +b[selectedRank])}
+                            else {return d3.ascending(+a[selectedRank], +b[selectedRank])};
+                        }).slice(0, 45);//top 50 here
+
+                        console.log(topData)
+                        // column definitions
+                        var columns = [selectedRank, 'institution', 'country'];
+                        console.log(columns)    
+                        // append the header row
+                        thead.selectAll('tr')
+                            .data(columns)
+                            .selectAll('th')
+                            .data(columns)
+                                .text(function (column) { return column; });
+
+                        tbody.selectAll("tr")
+                            .data(topData)
+                            .selectAll("td")
+                            .data(function(row) {
+                                return columns.map(function(column) {
+                                return {
+                                    column: column,
+                                    value: row[column]
+                                };
+                                });
+                            })
+                            .text(function(d) {return d.value;});
+                    }
+
+                    // When the button is changed, run the updateRank function
+                    d3.select("#selectButton").on("change", function(d) {
+                        // recover the option that has been chosen
+                        selectedRank = d3.select(this).property("value")
+                        // run the updateChart function with this selected option
+                        updateChart(selectedRank, selectedValue, ranks, map, g)
+                        updateTable(ranks, selectedRank, selectedValue, thead, tbody)
+                    })
+
+                     // When the button is changed, run the updateValue function
+                     d3.select("#selectButtontwo").on("change", function(d) {
+                        // recover the option that has been chosen
+                        selectedValue = d3.select(this).property("value")
+                        // run the updateChart function with this selected option
+                        updateChart(selectedRank, selectedValue, ranks, map)
+                        updateTable(ranks, selectedRank, selectedValue, thead, tbody)
+                    })
+
+                }
+
+                    
+        </script>
+</body>
+
+</html>
